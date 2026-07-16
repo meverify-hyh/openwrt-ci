@@ -1,93 +1,113 @@
 #!/bin/bash
+# ============================================
+# 自动裁剪配置，仅保留 AP 核心功能
+# ============================================
 
-# ==========================================
-# 1. 基础定制（根据需要取消注释）
-# ==========================================
-# 修改默认IP（AP模式建议改掉避免跟主路由冲突，比如改为 192.168.10.1）
-# sed -i 's/192.168.1.1/192.168.10.1/g' package/base-files/files/bin/config_generate
+# 基础定制（按需取消注释）
+  sed -i 's/192.168.1.1/192.168.2.253/g' package/base-files/files/bin/config_generate
 
-# 修改默认主机名
-# sed -i 's/OpenWrt/My-AP/g' package/base-files/files/bin/config_generate
-
-# ==========================================
-# 2. 删除所有第三方插件源码（AP不需要任何额外功能）
-# ==========================================
-# 清理 feeds 中可能带入的多余主题
+# 删除所有第三方插件源码（杜绝编译）
 rm -rf feeds/luci/themes/luci-theme-argon
 rm -rf feeds/luci/themes/luci-theme-netgear
+rm -rf package/luci-app-adguardhome package/luci-app-smartdns package/smartdns package/luci-app-mosdns
+rm -rf package/luci-app-alist package/luci-app-msd_lite package/msd_lite package/luci-app-poweroff
+rm -rf package/OpenAppFilter package/luci-app-netdata package/luci-theme-* package/openwrt-passwall*
+rm -rf package/luci-app-amlogic package/luci-app-dockerman package/luci-app-samba4 package/luci-app-zerotier
 
-# 清理可能存在的多余包（防止后续被编译进去）
-rm -rf package/luci-app-adguardhome
-rm -rf package/luci-app-smartdns
-rm -rf package/smartdns
-rm -rf package/luci-app-mosdns
-rm -rf package/luci-app-alist
-rm -rf package/luci-app-msd_lite
-rm -rf package/msd_lite
-rm -rf package/luci-app-poweroff
-rm -rf package/OpenAppFilter
-rm -rf package/luci-app-netdata
-rm -rf package/luci-theme-*
-rm -rf package/openwrt-passwall*
-rm -rf package/luci-app-amlogic
-
-# ==========================================
-# 3. 保留官方必要的修复补丁（不添加任何新功能）
-# ==========================================
-# 修复 hostapd 编译报错（WiFi必须）
-cp -f $GITHUB_WORKSPACE/scripts/011-fix-mbo-modules-build.patch package/network/services/hostapd/patches/011-fix-mbo-modules-build.patch 2>/dev/null || true
-
-# 修复文件系统工具报错（保留底层兼容性）
+# 修复补丁（保留）
+cp -f $GITHUB_WORKSPACE/scripts/011-fix-mbo-modules-build.patch package/network/services/hostapd/patches/ 2>/dev/null || true
 sed -i 's/TARGET_CFLAGS.*/TARGET_CFLAGS += -DHAVE_MAP_SYNC -D_LARGEFILE64_SOURCE/g' feeds/packages/utils/xfsprogs/Makefile 2>/dev/null || true
 
 # 通用 Makefile 修复
 find package/*/ -maxdepth 2 -path "*/Makefile" | xargs -i sed -i 's/..\/..\/luci.mk/$(TOPDIR)\/feeds\/luci\/luci.mk/g' {} 2>/dev/null || true
 find package/*/ -maxdepth 2 -path "*/Makefile" | xargs -i sed -i 's/..\/..\/lang\/golang\/golang-package.mk/$(TOPDIR)\/feeds\/packages\/lang\/golang\/golang-package.mk/g' {} 2>/dev/null || true
 
-# 修改版本号为日期（可选）
-date_version=$(date +"%y.%m.%d")
-orig_version=$(cat "package/lean/default-settings/files/zzz-default-settings" | grep DISTRIB_REVISION= | awk -F "'" '{print $2}' 2>/dev/null)
-if [ -n "$orig_version" ]; then
-    sed -i "s/${orig_version}/AP-R${date_version}/g" package/lean/default-settings/files/zzz-default-settings
-fi
-
-# ==========================================
-# 4. 更新 Feeds（必须步骤）
-# ==========================================
+# 更新 feeds（必须）
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# ==========================================
-# 5. 终极裁剪与核心强制锁定（针对 AP 固件）
-# ==========================================
-# 5.1 删除所有 USB、存储、下载、共享、打印驱动
-sed -i '/CONFIG_PACKAGE_kmod-usb/d' .config
-sed -i '/CONFIG_PACKAGE_usbutils/d' .config
-sed -i '/CONFIG_PACKAGE_block-mount/d' .config
-sed -i '/CONFIG_PACKAGE_fdisk/d' .config
-sed -i '/CONFIG_PACKAGE_lsblk/d' .config
-sed -i '/CONFIG_PACKAGE_e2fsprogs/d' .config
-sed -i '/CONFIG_PACKAGE_ntfs-3g/d' .config
-sed -i '/CONFIG_PACKAGE_kmod-fs-/d' .config
-sed -i '/CONFIG_PACKAGE_aria2/d' .config
-sed -i '/CONFIG_PACKAGE_transmission/d' .config
+# ============================================
+# 核心：删除所有多余的包配置（基于你给出的 .config）
+# ============================================
+# 删除 Docker 相关
+sed -i '/CONFIG_DOCKER/d' .config
+sed -i '/CONFIG_PACKAGE_docker/d' .config
+sed -i '/CONFIG_PACKAGE_dockerd/d' .config
+sed -i '/CONFIG_PACKAGE_runc/d' .config
+sed -i '/CONFIG_PACKAGE_containerd/d' .config
+sed -i '/CONFIG_PACKAGE_docker-compose/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-dockerman/d' .config
+sed -i '/CONFIG_PACKAGE_cgroupfs-mount/d' .config
+
+# 删除 Samba / 文件共享
 sed -i '/CONFIG_PACKAGE_samba4/d' .config
-sed -i '/CONFIG_PACKAGE_vsftpd/d' .config
-sed -i '/CONFIG_PACKAGE_kmod-usb-printer/d' .config
-sed -i '/CONFIG_PACKAGE_p910nd/d' .config
+sed -i '/CONFIG_PACKAGE_wsdd2/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-samba4/d' .config
+sed -i '/CONFIG_SAMBA4/d' .config
 
-# 5.2 删除多余的第三方 Luci 插件（只保留官方核心）
-sed -i '/CONFIG_PACKAGE_luci-app-adblock/d' .config
+# 删除科学上网 / 代理插件
+sed -i '/CONFIG_PACKAGE_luci-app-passwall/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-homeproxy/d' .config
+sed -i '/CONFIG_PACKAGE_sing-box/d' .config
+sed -i '/CONFIG_PACKAGE_xray-core/d' .config
+sed -i '/CONFIG_PACKAGE_microsocks/d' .config
+sed -i '/CONFIG_PACKAGE_dns2socks/d' .config
+sed -i '/CONFIG_PACKAGE_ipt2socks/d' .config
+sed -i '/CONFIG_PACKAGE_hysteria/d' .config
+sed -i '/CONFIG_PACKAGE_chinadns-ng/d' .config
+sed -i '/CONFIG_PACKAGE_tcping/d' .config
+sed -i '/CONFIG_SING_BOX/d' .config
+
+# 删除 DDNS / UPnP / ZeroTier / 唤醒等
+sed -i '/CONFIG_PACKAGE_ddns-scripts/d' .config
 sed -i '/CONFIG_PACKAGE_luci-app-ddns/d' .config
+sed -i '/CONFIG_PACKAGE_miniupnpd/d' .config
 sed -i '/CONFIG_PACKAGE_luci-app-upnp/d' .config
-sed -i '/CONFIG_PACKAGE_luci-app-sqm/d' .config
-sed -i '/CONFIG_PACKAGE_luci-app-nlbwmon/d' .config
+sed -i '/CONFIG_PACKAGE_zerotier/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-zerotier/d' .config
+sed -i '/CONFIG_PACKAGE_etherwake/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-wol/d' .config
 
-# ==========================================
-# 5.3 强制写入最终配置（确保 AP 核心功能 100% 在）
-# ==========================================
+# 删除 USB 存储 / 文件系统 / SCSI
+sed -i '/CONFIG_PACKAGE_kmod-usb/d' .config
+sed -i '/CONFIG_PACKAGE_block-mount/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-fs-/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-scsi/d' .config
+sed -i '/CONFIG_PACKAGE_btrfs-progs/d' .config
+sed -i '/CONFIG_PACKAGE_ntfs/d' .config
+sed -i '/CONFIG_PACKAGE_mount-utils/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-netspeedtest/d' .config
+
+# 删除多余网络工具（保留基础）
+sed -i '/CONFIG_PACKAGE_iperf3/d' .config   # 如果不需要测速可删，但建议保留
+sed -i '/CONFIG_PACKAGE_tcpdump/d' .config  # 如需排错可保留
+
+# 删除不用的内核模块（如 vxlan、macvlan、bonding 等，AP 不需要）
+sed -i '/CONFIG_PACKAGE_kmod-vxlan/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-macvlan/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-bonding/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-veth/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-tun/d' .config
+sed -i '/CONFIG_PACKAGE_kmod-wireguard/d' .config
+
+# 删除 SQM（流量整形，AP 可不要）
+sed -i '/CONFIG_PACKAGE_sqm-scripts/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-sqm/d' .config
+
+# 删除 argon 主题（只保留 bootstrap）
+sed -i '/CONFIG_PACKAGE_luci-theme-argon/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-argon-config/d' .config
+
+# 删除其他杂项
+sed -i '/CONFIG_PACKAGE_geoview/d' .config
+sed -i '/CONFIG_PACKAGE_curl/d' .config   # 若需要可保留
+sed -i '/CONFIG_PACKAGE_coremark/d' .config
+
+# ============================================
+# 强制保留绝对核心（覆盖可能被误删的）
+# ============================================
 cat >> .config <<EOF
-# ----- 核心网络协议（全保留） -----
+# ----- 网络协议（全保留） -----
 CONFIG_IPV6=y
 CONFIG_PACKAGE_dnsmasq-full=y
 CONFIG_PACKAGE_odhcpd-full=y
@@ -95,24 +115,25 @@ CONFIG_PACKAGE_ppp=y
 CONFIG_PACKAGE_ppp-mod-pppoe=y
 CONFIG_PACKAGE_luci-proto-ppp=y
 CONFIG_PACKAGE_firewall=y
+CONFIG_PACKAGE_ip-tiny=y
 
-# ----- VLAN 支持 -----
+# ----- VLAN -----
 CONFIG_PACKAGE_vlan=y
 CONFIG_PACKAGE_swconfig=y
 
-# ----- NSS 高通硬件加速（IPQ60xx 必选） -----
+# ----- NSS 硬件加速（IPQ60xx）-----
 CONFIG_PACKAGE_kmod-qca-nss-dp=y
 CONFIG_PACKAGE_kmod-qca-nss-ecm=y
 CONFIG_PACKAGE_kmod-qca-nss-crypto=y
 
-# ----- WiFi 无线驱动与加密 -----
+# ----- WiFi 驱动 -----
 CONFIG_PACKAGE_kmod-ath11k=y
 CONFIG_PACKAGE_kmod-ath11k-ahb=y
 CONFIG_PACKAGE_hostapd-openssl=y
 CONFIG_PACKAGE_wpad-openssl=y
 CONFIG_PACKAGE_iw=y
 
-# ----- LuCI Web 管理界面（配 VLAN 和 WiFi 必备） -----
+# ----- LuCI Web 界面（保留配置）-----
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-mod-admin-full=y
 CONFIG_PACKAGE_luci-mod-network=y
@@ -121,12 +142,11 @@ CONFIG_PACKAGE_luci-theme-bootstrap=y
 CONFIG_PACKAGE_luci-app-firewall=y
 CONFIG_PACKAGE_luci-app-opkg=y
 
-# ----- 基础工具（保持调试能力） -----
+# ----- 基础工具（保留调试）-----
 CONFIG_PACKAGE_tcpdump-mini=y
 CONFIG_PACKAGE_iperf3=y
 CONFIG_PACKAGE_curl=y
-CONFIG_PACKAGE_vim-fuller=y
 EOF
 
-# 去除可能重复的 CONFIG_ 行（避免冲突）
+# 去重
 sort -u -o .config .config
